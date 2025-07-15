@@ -1,0 +1,9 @@
+*.md
+test/**
+.eslintrc.json
+apidoc.json
+.github*
+.vscode*
+.git
+.cache
+pgdata
