@@ -31,6 +31,7 @@ router.post('/membership/order', auth, handleErrorAsync(usersController.postCrea
 router.get('/membership/orders', auth, handleErrorAsync(usersController.getUserOrders));
 router.get('/checkout', auth, handleErrorAsync(usersController.getCheckout));
 router.put('/checkout', auth, handleErrorAsync(usersController.putCheckout));
+router.post('/newebpay', auth, handleErrorAsync(usersController.postNeWebPay));
 router.post('/membership/discount', auth, handleErrorAsync(usersController.getDiscount)); // 試算優惠
 router.post('/membership/discount/usage', auth, handleErrorAsync(usersController.postDiscountUsage)); // 儲存使用紀錄
 router.get('/membership/:order_id', auth, handleErrorAsync(usersController.getUserOrderDetail));

@@ -1,4 +1,4 @@
-const config = require('../config/index');
+const config = require('../../config/index');
 const { create_mpg_aes_encrypt, create_mpg_sha_encrypt } = require('./neWebPayCrypto');
 
 function generateNewebpayForm(order, productName, userEmail, cartCount) {
@@ -7,10 +7,10 @@ function generateNewebpayForm(order, productName, userEmail, cartCount) {
   const TimeStamp = Math.floor(Date.now() / 1000);
   const neWedPayOrder = {
     Email: userEmail,
-    Amt: order.amount,
+    Amt: order.total_price,
     ItemDesc,
     TimeStamp,
-    MerchantOrderNo: TimeStamp,
+    MerchantOrderNo: order.display_id,
   };
 
   const aesEncrypt = create_mpg_aes_encrypt(neWedPayOrder);

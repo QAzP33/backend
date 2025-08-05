@@ -1,5 +1,5 @@
 const crypto = require('crypto');
-const config = require('../config/index');
+const config = require('../../config/index');
 const RespondType = 'JSON';
 
 function genDataChain(neWedPayOrder) {

@@ -21,6 +21,7 @@ const { sendResetEmail } = require('../utils/mailer');
 const { nanoid } = require('nanoid');
 const crypto = require('crypto');
 // const { password } = require('../config/db');
+const { generateNewebpayForm } = require('../utils/newebpay/generateNewebpayForm');
 
 const usersController = {
   async postSignup(req, res, next) {
@@ -1273,12 +1274,12 @@ const usersController = {
         (sum, item) => sum + item.price * item.quantity,
         0
       );
-      
+
       let discount = 0;
-      
+
       if (order.Discount_method) {
         const { discount_price, discount_percent } = order.Discount_method;
-      
+
         if (discount_price != null && discount_price > 0) {
           discount = discount_price;
         } else if (discount_percent != null && discount_percent < 1) {
@@ -1553,6 +1554,40 @@ const usersController = {
       });
     } catch (error) {
       logger.error('取得結帳資訊失敗:', error);
+      next(error);
+    }
+  },
+
+  async postNeWebPay(req, res, next) {
+    try {
+      const { id: user_id } = req.user;
+      const { order_id } = req.query;
+
+      const orderRepo = dataSource.getRepository('Order');
+      const findOrder = await orderRepo.findOne({
+        where: {
+          id: order_id,
+          user_id: user_id,
+        },
+        relations: ['User', 'Order_link_product', 'Order_link_product.Product'],
+      });
+
+      if (!findOrder) {
+        return res.status(404).json({
+          message: '找不到此訂單',
+        });
+      }
+
+      const { html } = generateNewebpayForm(
+        findOrder,
+        findOrder.Order_link_product[0]?.Product?.name || '商品',
+        findOrder.User.email,
+        findOrder.Order_link_product.length
+      );
+
+      return res.status(200).type('html').send(html);
+    } catch (error) {
+      logger.error('藍新金流錯誤', error);
       next(error);
     }
   },
