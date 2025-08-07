@@ -11,6 +11,8 @@ function generateNewebpayForm(order, productName, userEmail, cartCount) {
     ItemDesc,
     TimeStamp,
     MerchantOrderNo: order.display_id,
+    ReturnURL: config.get('neWebPaySecret.returnUrl'),
+    NotifyURL: config.get('neWebPaySecret.notifyUrl'),
   };
 
   const aesEncrypt = create_mpg_aes_encrypt(neWedPayOrder);
@@ -28,6 +30,8 @@ function generateNewebpayForm(order, productName, userEmail, cartCount) {
         <input type="hidden" name="Amt" value="${neWedPayOrder.Amt}">
         <input type="hidden" name="ItemDesc" value="${neWedPayOrder.ItemDesc}">
         <input type="hidden" name="Email" value="${neWedPayOrder.Email}">
+        <input type="hidden" name="ReturnURL" value="${neWedPayOrder.ReturnURL}">
+        <input type="hidden" name="NotifyURL" value="${neWedPayOrder.NotifyURL}">
         <button type="submit">送出</button>
       </form>
       <script>document.getElementById("newebpay-form").submit();</script>`,
