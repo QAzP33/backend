@@ -4,14 +4,16 @@ const result = dotenv.config();
 const db = require('./db');
 const web = require('./web');
 const secret = require('./secret');
+const neWebPaySecret = require('./neWebPaySecret');
 
 if (result.error && process.env.NODE_ENV !== 'production') {
-  throw result.error;  // for local 
+  throw result.error; // for local
 }
 const config = {
   db,
   web,
-  secret
+  secret,
+  neWebPaySecret,
 };
 
 class ConfigManager {
@@ -30,7 +32,7 @@ class ConfigManager {
     }
     const keys = path.split('.');
     let configValue = config;
-    keys.forEach((key) => {
+    keys.forEach(key => {
       if (!Object.prototype.hasOwnProperty.call(configValue, key)) {
         throw new Error(`config ${path} not found`);
       }

@@ -21,6 +21,34 @@ const { sendResetEmail } = require('../utils/mailer');
 const { nanoid } = require('nanoid');
 const crypto = require('crypto');
 // const { password } = require('../config/db');
+const { generateNewebpayForm } = require('../utils/newebpay/generateNewebpayForm');
+const { decryptTradeInfo, verifyNewebpaySignature } = require('../utils/newebpay/neWebPayCrypto');
+
+// 更新訂單付款狀態
+async function updateOrderPaymentStatus(merchantOrderNo, isPaid) {
+  try {
+    const orderRepo = dataSource.getRepository('Order');
+    const order = await orderRepo.findOne({
+      where: { display_id: merchantOrderNo },
+    });
+
+    if (!order) {
+      throw new Error('找不到訂單');
+    }
+
+    order.is_paid = isPaid;
+    order.payment_method_id = 2; // 假設 2 是信用卡付款的 ID
+    if (isPaid) {
+      order.paid_at = new Date();
+    }
+
+    await orderRepo.save(order);
+    logger.info(`訂單 ${merchantOrderNo} 付款狀態已更新為: ${isPaid}`);
+  } catch (error) {
+    logger.error('更新訂單付款狀態失敗', error);
+    throw error;
+  }
+}
 
 const usersController = {
   async postSignup(req, res, next) {
@@ -1273,12 +1301,12 @@ const usersController = {
         (sum, item) => sum + item.price * item.quantity,
         0
       );
-      
+
       let discount = 0;
-      
+
       if (order.Discount_method) {
         const { discount_price, discount_percent } = order.Discount_method;
-      
+
         if (discount_price != null && discount_price > 0) {
           discount = discount_price;
         } else if (discount_percent != null && discount_percent < 1) {
@@ -1554,6 +1582,124 @@ const usersController = {
     } catch (error) {
       logger.error('取得結帳資訊失敗:', error);
       next(error);
+    }
+  },
+
+  async postNeWebPay(req, res, next) {
+    try {
+      const { id: user_id } = req.user;
+      const { order_id } = req.query;
+
+      const orderRepo = dataSource.getRepository('Order');
+      const findOrder = await orderRepo.findOne({
+        where: {
+          id: order_id,
+          user_id: user_id,
+        },
+        relations: ['User', 'Order_link_product', 'Order_link_product.Product'],
+      });
+
+      if (!findOrder) {
+        return res.status(404).json({
+          message: '找不到此訂單',
+        });
+      }
+
+      const { html } = generateNewebpayForm(
+        findOrder,
+        findOrder.Order_link_product[0]?.Product?.name || '商品',
+        findOrder.User.email,
+        findOrder.Order_link_product.length
+      );
+
+      return res.status(200).type('html').send(html);
+    } catch (error) {
+      logger.error('藍新金流錯誤', error);
+      next(error);
+    }
+  },
+
+  // 處理藍新金流付款回調 (ReturnUrl - 用戶瀏覽器回調)
+  async getPaymentCallback(req, res, next) {
+    try {
+      logger.info('收到付款回調請求', {
+        method: req.method,
+        body: req.body,
+        query: req.query,
+        headers: req.headers,
+      });
+
+      // 藍新金流可能使用 GET 或 POST，我們都處理
+      const { TradeInfo, TradeSha } = req.method === 'GET' ? req.query : req.body;
+
+      if (!TradeInfo || !TradeSha) {
+        logger.error('缺少必要的回調參數', { TradeInfo: !!TradeInfo, TradeSha: !!TradeSha });
+        return res.redirect(
+          'https://qazp33.github.io/3frontend/payment/error?reason=missing_params'
+        );
+      }
+
+      // 驗證簽章
+      const isValidSignature = verifyNewebpaySignature(TradeInfo, TradeSha);
+
+      if (!isValidSignature) {
+        logger.error('簽章驗證失敗');
+        return res.redirect(
+          'https://qazp33.github.io/3frontend/payment/error?reason=invalid_signature'
+        );
+      }
+
+      // 解密 TradeInfo
+      const paymentResult = decryptTradeInfo(TradeInfo);
+      logger.info('付款結果', paymentResult);
+
+      if (paymentResult.Status === 'SUCCESS') {
+        // 付款成功，更新訂單狀態
+        await updateOrderPaymentStatus(paymentResult.MerchantOrderNo, true);
+        return res.redirect('https://qazp33.github.io/3frontend/payment/success');
+      } else {
+        // 付款失敗
+        await updateOrderPaymentStatus(paymentResult.MerchantOrderNo, false);
+        return res.redirect(
+          'https://qazp33.github.io/3frontend/payment/error?reason=payment_failed'
+        );
+      }
+    } catch (error) {
+      logger.error('付款回調處理錯誤', error);
+      return res.redirect('https://qazp33.github.io/3frontend/payment/error?reason=system_error');
+    }
+  },
+
+  // 處理藍新金流付款通知 (NotifyUrl - 伺服器對伺服器回調)
+  async postPaymentNotify(req, res, next) {
+    try {
+      const { TradeInfo, TradeSha } = req.body;
+
+      // 驗證簽章
+      const isValidSignature = verifyNewebpaySignature(TradeInfo, TradeSha);
+
+      if (!isValidSignature) {
+        return res.status(400).json({ message: 'Invalid signature' });
+      }
+
+      // 解密 TradeInfo
+      const paymentResult = decryptTradeInfo(TradeInfo);
+
+      if (paymentResult.Status === 'SUCCESS') {
+        // 付款成功，更新訂單狀態
+        await updateOrderPaymentStatus(paymentResult.MerchantOrderNo, true);
+
+        // 可以發送確認郵件等
+        // await sendPaymentConfirmationEmail(paymentResult.MerchantOrderNo);
+      } else {
+        // 付款失敗
+        await updateOrderPaymentStatus(paymentResult.MerchantOrderNo, false);
+      }
+
+      return res.status(200).json({ message: 'OK' });
+    } catch (error) {
+      logger.error('付款通知處理錯誤', error);
+      return res.status(500).json({ message: 'Internal server error' });
     }
   },
 };
