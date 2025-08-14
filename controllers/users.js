@@ -95,16 +95,28 @@ const usersController = {
 
       const userRepository = dataSource.getRepository('User');
       const existingUser = await userRepository.findOne({
+        select: ['id', 'name', 'password', 'role'],
         where: { email },
       });
 
       if (existingUser) {
-        logger.warn('建立使用者錯誤: Email 已被使用');
-        res.status(409).json({
-          message: '註冊失敗，Email 已被使用',
-        });
-        return;
+        if (existingUser.password) {
+          // 有email, 有密碼 → 一般會員已註冊
+          logger.warn('建立使用者錯誤: Email 已被使用');
+          res.status(409).json({
+            message: '此信箱已註冊，請使用一般登入',
+          });
+          return;
+        } else {
+          // 有email, 無密碼 → Google 註冊
+          logger.warn('建立使用者錯誤: 此信箱已透過 Google 註冊');
+          res.status(403).json({
+            message: '此信箱已透過 Google 註冊，請使用 Google 登入',
+          });
+          return;
+        }
       }
+
       const salt = await bcrypt.genSalt(10);
       const hashPassword = await bcrypt.hash(password, salt);
       const newUser = userRepository.create({
@@ -164,12 +176,19 @@ const usersController = {
         where: { email },
       });
 
-      if (!existingUser) {
-        res.status(401).json({
+      if (existingUser) {
+        if (!existingUser.password) {
+          logger.warn('Google 註冊帳號嘗試使用密碼登入');
+          return res.status(403).json({
+            message: '此信箱已透過 Google 註冊，請使用 Google 登入',
+          });
+        }
+      } else {
+        return res.status(401).json({
           message: '使用者不存在或密碼輸入錯誤',
         });
-        return;
       }
+
       logger.info(`使用者資料: ${JSON.stringify(existingUser)}`);
       const isMatch = await bcrypt.compare(password, existingUser.password);
       if (!isMatch) {
