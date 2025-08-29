@@ -14,6 +14,7 @@ const limiter = require('../middlewares/limiter');
 
 router.post('/signup', handleErrorAsync(usersController.postSignup));
 router.post('/login', handleErrorAsync(usersController.postLogin));
+router.post('/google-login', handleErrorAsync(usersController.googleLogin));
 router.get('/membership/profile', auth, handleErrorAsync(usersController.getProfile));
 router.put('/membership/profile', auth, handleErrorAsync(usersController.putProfile));
 router.get('/membership/receiver', auth, handleErrorAsync(usersController.getReceiver));

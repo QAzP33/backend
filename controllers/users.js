@@ -20,6 +20,7 @@ const generateJWT = require('../utils/generateJWT');
 const { sendResetEmail } = require('../utils/mailer');
 const { nanoid } = require('nanoid');
 const crypto = require('crypto');
+const { OAuth2Client } = require('google-auth-library');
 // const { password } = require('../config/db');
 const { generateNewebpayForm } = require('../utils/newebpay/generateNewebpayForm');
 const { decryptTradeInfo, verifyNewebpaySignature } = require('../utils/newebpay/neWebPayCrypto');
@@ -94,16 +95,28 @@ const usersController = {
 
       const userRepository = dataSource.getRepository('User');
       const existingUser = await userRepository.findOne({
+        select: ['id', 'name', 'password', 'role'],
         where: { email },
       });
 
       if (existingUser) {
-        logger.warn('建立使用者錯誤: Email 已被使用');
-        res.status(409).json({
-          message: '註冊失敗，Email 已被使用',
-        });
-        return;
+        if (existingUser.password) {
+          // 有email, 有密碼 → 一般會員已註冊
+          logger.warn('建立使用者錯誤: Email 已被使用');
+          res.status(409).json({
+            message: '此信箱已註冊，請使用一般登入',
+          });
+          return;
+        } else {
+          // 有email, 無密碼 → Google 註冊
+          logger.warn('建立使用者錯誤: 此信箱已透過 Google 註冊');
+          res.status(403).json({
+            message: '此信箱已透過 Google 註冊，請使用 Google 登入',
+          });
+          return;
+        }
       }
+
       const salt = await bcrypt.genSalt(10);
       const hashPassword = await bcrypt.hash(password, salt);
       const newUser = userRepository.create({
@@ -163,12 +176,19 @@ const usersController = {
         where: { email },
       });
 
-      if (!existingUser) {
-        res.status(401).json({
+      if (existingUser) {
+        if (!existingUser.password) {
+          logger.warn('Google 註冊帳號嘗試使用密碼登入');
+          return res.status(403).json({
+            message: '此信箱已透過 Google 註冊，請使用 Google 登入',
+          });
+        }
+      } else {
+        return res.status(401).json({
           message: '使用者不存在或密碼輸入錯誤',
         });
-        return;
       }
+
       logger.info(`使用者資料: ${JSON.stringify(existingUser)}`);
       const isMatch = await bcrypt.compare(password, existingUser.password);
       if (!isMatch) {
@@ -200,6 +220,67 @@ const usersController = {
     } catch (error) {
       logger.error('登入錯誤:', error);
       next(error);
+    }
+  },
+
+  // Google 登入
+  async googleLogin(req, res) {
+    try {
+      const { credential: accessToken } = req.body;
+      const client = new OAuth2Client();
+
+      // 從 Google API 拿使用者資料（email、name）
+      const userInfoRes = await client.getTokenInfo(accessToken);
+      const email = userInfoRes.email;
+      const name = email.split('@')[0]; // 後端沒有拿到 name，就用 email 前段代替
+
+      const userRepository = dataSource.getRepository('User');
+      const existingUser = await userRepository.findOne({
+        select: ['id', 'email', 'password', 'name', 'role'],
+        where: { email },
+      });
+
+      if (existingUser && existingUser.password) {
+        return res.status(403).json({ message: '此信箱已註冊，請使用一般登入' });
+      }
+
+      let user;
+      if (!existingUser) {
+        user = userRepository.create({
+          email,
+          name,
+          password: null,
+          role: 'USER',
+        });
+        user = await userRepository.save(user);
+      } else {
+        user = existingUser;
+      }
+
+      const token = await generateJWT(
+        {
+          id: user.id,
+          role: user.role,
+        },
+        config.get('secret.jwtSecret'),
+        {
+          expiresIn: `${config.get('secret.jwtExpiresDay')}`,
+        }
+      );
+
+      res.status(201).json({
+        message: '登入成功',
+        data: {
+          token,
+          user: {
+            name: user.name,
+            role: user.role,
+          },
+        },
+      });
+    } catch (error) {
+      logger.error('Google 登入錯誤:', error);
+      res.status(401).json({ message: 'Google 驗證失敗' });
     }
   },
 
