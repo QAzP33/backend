@@ -180,7 +180,7 @@ const usersController = {
       const { id } = req.user;
       const userRepository = dataSource.getRepository('User');
       const user = await userRepository.findOne({
-        select: ['name', 'gender', 'birth_date', 'phone', 'address'],
+        select: ['name', 'gender', 'birth_date', 'phone', 'address', 'profile_img'],
         where: { id },
       });
       res.status(200).json({
@@ -198,7 +198,7 @@ const usersController = {
   async putProfile(req, res, next) {
     try {
       const { id } = req.user;
-      const { name, gender, birth_date, phone, address } = req.body;
+      const { name, gender, birth_date, phone, address, profile_img } = req.body;
       if (
         isUndefined(name) ||
         isUndefined(gender) ||
@@ -249,7 +249,7 @@ const usersController = {
       }
       const userRepository = dataSource.getRepository('User');
       const user = await userRepository.findOne({
-        select: ['name', 'gender', 'birth_date', 'phone', 'address'],
+        select: ['name', 'gender', 'birth_date', 'phone', 'address', 'profile_img'],
         where: {
           id,
         },
@@ -276,6 +276,7 @@ const usersController = {
           birth_date,
           phone,
           address,
+          profile_img,
         }
       );
       if (updatedResult.affected === 0) {
@@ -285,7 +286,7 @@ const usersController = {
         return;
       }
       const result = await userRepository.findOne({
-        select: ['name', 'gender', 'birth_date', 'phone', 'address'],
+        select: ['name', 'gender', 'birth_date', 'phone', 'address', 'profile_img'],
         where: {
           id,
         },
