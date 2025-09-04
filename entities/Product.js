@@ -34,7 +34,7 @@ module.exports = new EntitySchema({
     image_url: {
       type: 'varchar',
       length: 2048,
-      nullable: false,
+      nullable: true,
     },
     image_urls: {
       type: 'text',
