@@ -23,33 +23,11 @@ const crypto = require('crypto');
 const { OAuth2Client } = require('google-auth-library');
 // const { password } = require('../config/db');
 const { generateNewebpayForm } = require('../utils/newebpay/generateNewebpayForm');
-const { decryptTradeInfo, verifyNewebpaySignature } = require('../utils/newebpay/neWebPayCrypto');
-
-// 更新訂單付款狀態
-async function updateOrderPaymentStatus(merchantOrderNo, isPaid) {
-  try {
-    const orderRepo = dataSource.getRepository('Order');
-    const order = await orderRepo.findOne({
-      where: { display_id: merchantOrderNo },
-    });
-
-    if (!order) {
-      throw new Error('找不到訂單');
-    }
-
-    order.is_paid = isPaid;
-    order.payment_method_id = 2; // 假設 2 是信用卡付款的 ID
-    if (isPaid) {
-      order.paid_at = new Date();
-    }
-
-    await orderRepo.save(order);
-    logger.info(`訂單 ${merchantOrderNo} 付款狀態已更新為: ${isPaid}`);
-  } catch (error) {
-    logger.error('更新訂單付款狀態失敗', error);
-    throw error;
-  }
-}
+const {
+  decryptTradeInfo,
+  verifyNewebpaySignature,
+  updateOrderPaymentStatus,
+} = require('../utils/newebpay/neWebPayCrypto');
 
 const usersController = {
   async postSignup(req, res, next) {
@@ -1693,6 +1671,25 @@ const usersController = {
         findOrder.Order_link_product.length
       );
 
+      const cartRepo = dataSource.getRepository('Cart');
+      const cartLinkProductRepo = dataSource.getRepository('Cart_link_product');
+      const cart = await cartRepo.findOne({
+        where: { user_id },
+        relations: ['Cart_link_product'],
+      });
+
+      if (cart && cart.Cart_link_product) {
+        const selectedItems = cart.Cart_link_product.filter(item => item.is_selected === true);
+        for (const item of selectedItems) {
+          await cartLinkProductRepo.delete({
+            cart_id: cart.id,
+            product_id: item.product_id,
+          });
+        }
+      }
+
+      await orderRepo.save(findOrder);
+
       return res.status(200).type('html').send(html);
     } catch (error) {
       logger.error('藍新金流錯誤', error);
@@ -1701,7 +1698,7 @@ const usersController = {
   },
 
   // 處理藍新金流付款回調 (ReturnUrl - 用戶瀏覽器回調)
-  async getPaymentCallback(req, res, next) {
+  async postPaymentCallback(req, res, next) {
     try {
       logger.info('收到付款回調請求', {
         method: req.method,
@@ -1716,7 +1713,7 @@ const usersController = {
       if (!TradeInfo || !TradeSha) {
         logger.error('缺少必要的回調參數', { TradeInfo: !!TradeInfo, TradeSha: !!TradeSha });
         return res.redirect(
-          'https://qazp33.github.io/3frontend/payment/error?reason=missing_params'
+          `${process.env.FRONT_URL}/3frontend/payment/error?reason=missing_params`
         );
       }
 
@@ -1726,28 +1723,30 @@ const usersController = {
       if (!isValidSignature) {
         logger.error('簽章驗證失敗');
         return res.redirect(
-          'https://qazp33.github.io/3frontend/payment/error?reason=invalid_signature'
+          `${process.env.FRONT_URL}/3frontend/payment/error?reason=invalid_signature`
         );
       }
 
       // 解密 TradeInfo
       const paymentResult = decryptTradeInfo(TradeInfo);
       logger.info('付款結果', paymentResult);
+      // console.log(paymentResult.Result.MerchantOrderNo);
 
       if (paymentResult.Status === 'SUCCESS') {
         // 付款成功，更新訂單狀態
+
         await updateOrderPaymentStatus(paymentResult.MerchantOrderNo, true);
-        return res.redirect('https://qazp33.github.io/3frontend/payment/success');
+        return res.redirect(`${process.env.FRONT_URL}/3frontend/payment/success`);
       } else {
         // 付款失敗
-        await updateOrderPaymentStatus(paymentResult.MerchantOrderNo, false);
+        await updateOrderPaymentStatus(paymentResult.Result.MerchantOrderNo, false);
         return res.redirect(
-          'https://qazp33.github.io/3frontend/payment/error?reason=payment_failed'
+          `${process.env.FRONT_URL}/3frontend/payment/error?reason=payment_failed`
         );
       }
     } catch (error) {
       logger.error('付款回調處理錯誤', error);
-      return res.redirect('https://qazp33.github.io/3frontend/payment/error?reason=system_error');
+      return res.redirect(`${process.env.FRONT_URL}/3frontend/payment/error?reason=system_error`);
     }
   },
 

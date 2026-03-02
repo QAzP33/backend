@@ -1,5 +1,7 @@
 const crypto = require('crypto');
 const config = require('../../config/index');
+const logger = require('../logger')('neWebPayCrypto');
+const { dataSource } = require('../../db/data-source');
 const RespondType = 'JSON';
 
 function genDataChain(neWedPayOrder) {
@@ -66,9 +68,36 @@ function verifyNewebpaySignature(TradeInfo, TradeSha) {
   }
 }
 
+async function updateOrderPaymentStatus(merchantOrderNo, isPaid) {
+  try {
+    const orderRepo = dataSource.getRepository('Order');
+    const order = await orderRepo.findOne({
+      where: { display_id: merchantOrderNo },
+    });
+
+    if (!order) {
+      throw new Error('找不到訂單');
+    }
+
+    order.is_paid = isPaid;
+    order.payment_method_id = 2; // 假設 2 是信用卡付款的 ID
+    if (isPaid) {
+      order.paid_at = new Date();
+    }
+
+    await orderRepo.save(order);
+
+    logger.info(`訂單 ${merchantOrderNo} 付款狀態已更新為: ${isPaid}`);
+  } catch (error) {
+    logger.error('更新訂單付款狀態失敗', error);
+    throw error;
+  }
+}
+
 module.exports = {
   create_mpg_aes_encrypt,
   create_mpg_sha_encrypt,
   decryptTradeInfo,
   verifyNewebpaySignature,
+  updateOrderPaymentStatus,
 };
