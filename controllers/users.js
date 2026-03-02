@@ -1632,7 +1632,7 @@ const usersController = {
       if (!TradeInfo || !TradeSha) {
         logger.error('缺少必要的回調參數', { TradeInfo: !!TradeInfo, TradeSha: !!TradeSha });
         return res.redirect(
-          'https://qazp33.github.io/3frontend/payment/error?reason=missing_params'
+          `${process.env.FRONT_URL}/3frontend/payment/error?reason=missing_params`
         );
       }
 
@@ -1642,7 +1642,7 @@ const usersController = {
       if (!isValidSignature) {
         logger.error('簽章驗證失敗');
         return res.redirect(
-          'https://qazp33.github.io/3frontend/payment/error?reason=invalid_signature'
+          `${process.env.FRONT_URL}/3frontend/payment/error?reason=invalid_signature`
         );
       }
 
@@ -1653,18 +1653,19 @@ const usersController = {
 
       if (paymentResult.Status === 'SUCCESS') {
         // 付款成功，更新訂單狀態
-        await updateOrderPaymentStatus(paymentResult.Result.MerchantOrderNo, true);
-        return res.redirect('https://qazp33.github.io/3frontend/payment/success');
+
+        await updateOrderPaymentStatus(paymentResult.MerchantOrderNo, true);
+        return res.redirect(`${process.env.FRONT_URL}/3frontend/payment/success`);
       } else {
         // 付款失敗
         await updateOrderPaymentStatus(paymentResult.Result.MerchantOrderNo, false);
         return res.redirect(
-          'https://qazp33.github.io/3frontend/payment/error?reason=payment_failed'
+          `${process.env.FRONT_URL}/3frontend/payment/error?reason=payment_failed`
         );
       }
     } catch (error) {
       logger.error('付款回調處理錯誤', error);
-      return res.redirect('https://qazp33.github.io/3frontend/payment/error?reason=system_error');
+      return res.redirect(`${process.env.FRONT_URL}/3frontend/payment/error?reason=system_error`);
     }
   },
 
